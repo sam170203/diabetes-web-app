@@ -16,29 +16,74 @@ export async function fetchAPI<T>(endpoint: string, options?: RequestInit): Prom
   return response.json();
 }
 
+export interface ClinicalResult {
+  prediction: number;
+  risk_percentage: number;
+  risk_level: string;
+  feature_contributions: Array<{
+    feature: string;
+    value: number;
+    contribution: number;
+    impact: string;
+  }>;
+  top_insights: Array<{
+    feature: string;
+    contribution_pct: number;
+    description: string;
+  }>;
+  model_info: {
+    accuracy: number;
+    dataset: string;
+    samples: number;
+  };
+}
+
+export interface LifestyleResult {
+  risk_score: number;
+  metabolic_score: number;
+  risk_level: string;
+  recommendation: string;
+  insights: string[];
+  positive_feedback: string[];
+  feature_importance: Array<{ feature: string; importance: number }>;
+}
+
+export interface InsightsData {
+  insights: string[];
+  timestamp: string;
+}
+
+export interface DashboardSummary {
+  clinical_risk: number;
+  lifestyle_risk: number;
+  metabolic_score: number;
+  last_updated: string;
+  alerts: string[];
+}
+
 export const api = {
   clinical: {
     predict: (data: Record<string, number>) =>
-      fetchAPI<any>("/api/clinical/predict", {
+      fetchAPI<ClinicalResult>("/api/clinical/predict", {
         method: "POST",
         body: JSON.stringify(data),
       }),
     getFeatureImportance: () =>
-      fetchAPI<any[]>("/api/clinical/feature-importance"),
+      fetchAPI<Array<{ feature: string; importance: number }>>("/api/clinical/feature-importance"),
   },
   lifestyle: {
     predict: (data: Record<string, number>) =>
-      fetchAPI<any>("/api/lifestyle/predict", {
+      fetchAPI<LifestyleResult>("/api/lifestyle/predict", {
         method: "POST",
         body: JSON.stringify(data),
       }),
     getFeatureImportance: () =>
-      fetchAPI<any[]>("/api/lifestyle/feature-importance"),
+      fetchAPI<Array<{ feature: string; importance: number }>>("/api/lifestyle/feature-importance"),
   },
   insights: {
-    generate: () => fetchAPI<{ insights: string[] }>("/api/insights/generate"),
+    generate: () => fetchAPI<InsightsData>("/api/insights/generate"),
   },
   dashboard: {
-    summary: () => fetchAPI<any>("/api/dashboard/summary"),
+    summary: () => fetchAPI<DashboardSummary>("/api/dashboard/summary"),
   },
 };

@@ -18,14 +18,7 @@ import {
   Activity
 } from "lucide-react";
 import { 
-  RadarChart, 
-  PolarGrid, 
-  PolarAngleAxis, 
-  PolarRadiusAxis, 
-  Radar,
   ResponsiveContainer,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   AreaChart,
@@ -92,15 +85,6 @@ export default function LifestyleAnalytics() {
     }
     setLoading(false);
   };
-
-  const radarData = result ? [
-    { metric: "Sleep", value: formData.sleep_duration ? (formData.sleep_duration / 10) * 100 : 50 },
-    { metric: "Activity", value: formData.daily_activity ? (formData.daily_activity / 120) * 100 : 50 },
-    { metric: "Diet", value: formData.diet_quality ? formData.diet_quality * 100 : 50 },
-    { metric: "Hydration", value: formData.water_intake ? (formData.water_intake / 12) * 100 : 50 },
-    { metric: "Stress", value: formData.stress_level ? ((10 - formData.stress_level) / 10) * 100 : 50 },
-    { metric: "Habits", value: formData.smoking_habits !== undefined ? (1 - formData.smoking_habits) * 100 : 50 },
-  ] : [];
 
   const getScoreColor = (score: number) => {
     if (score >= 70) return "text-emerald-400";

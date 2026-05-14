@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { 
-  Watch, 
   Heart, 
   Footprints, 
   Flame, 
@@ -11,7 +10,6 @@ import {
   Activity,
   Droplets,
   Thermometer,
-  Radio,
   Zap
 } from "lucide-react";
 import { 
@@ -54,9 +52,8 @@ const metricCards = [
 export default function RealtimeMonitoring() {
   const [isConnected, setIsConnected] = useState(false);
   const [currentData, setCurrentData] = useState<LiveData | null>(null);
-  const [history, setHistory] = useState<LiveData[]>([]);
+  const [chartData, setChartData] = useState<{ time: string; heartRate: number; bloodSugar: number }[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-  const chartDataRef = useRef<{ time: string; heartRate: number; bloodSugar: number }[]>([]);
 
   useEffect(() => {
     const ws = new WebSocket(API_CONFIG.endpoints.websocket.stream);
@@ -64,35 +61,21 @@ export default function RealtimeMonitoring() {
 
     ws.onopen = () => {
       setIsConnected(true);
-      console.log("WebSocket connected");
     };
 
     ws.onmessage = (event) => {
       const data: LiveData = JSON.parse(event.data);
       setCurrentData(data);
-      
-      setHistory(prev => {
-        const newHistory = [...prev, data];
-        if (newHistory.length > 30) {
-          return newHistory.slice(-30);
-        }
-        return newHistory;
-      });
 
       const time = new Date(data.timestamp).toLocaleTimeString();
-      chartDataRef.current = [
-        ...chartDataRef.current.slice(-29),
+      setChartData(prev => [
+        ...prev.slice(-29),
         { time, heartRate: data.heart_rate, bloodSugar: data.blood_sugar }
-      ];
+      ]);
     };
 
     ws.onclose = () => {
       setIsConnected(false);
-      console.log("WebSocket disconnected");
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
     };
 
     return () => {
@@ -101,8 +84,6 @@ export default function RealtimeMonitoring() {
       }
     };
   }, []);
-
-  const chartData = chartDataRef.current;
 
   return (
     <div className="min-h-screen p-6 md:p-8">

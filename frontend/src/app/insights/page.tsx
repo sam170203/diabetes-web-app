@@ -5,12 +5,9 @@ import { motion } from "framer-motion";
 import { 
   FileText, 
   Sparkles, 
-  TrendingUp, 
-  TrendingDown,
   AlertCircle,
   CheckCircle,
   Lightbulb,
-  Calendar,
   Target,
   Brain
 } from "lucide-react";
