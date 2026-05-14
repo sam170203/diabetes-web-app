@@ -157,7 +157,12 @@ def root():
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(get_openai_client())}
+    key_present = bool(OPENAI_API_KEY and len(OPENAI_API_KEY) > 10)
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(get_openai_client()), "key_loaded": key_present}
+
+@app.get("/api/debug/env")
+def debug_env():
+    return {"key_length": len(OPENAI_API_KEY) if OPENAI_API_KEY else 0, "key_prefix": OPENAI_API_KEY[:10] if OPENAI_API_KEY else "NONE"}
 
 @app.post("/api/clinical/predict")
 def predict_clinical(data: ClinicalInput):
