@@ -8,6 +8,7 @@ import asyncio
 import os
 from datetime import datetime
 from fastapi import WebSocket
+from groq import Groq
 
 app = FastAPI(title="DiaSense AI API", version="1.0.0")
 
@@ -15,7 +16,23 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 openai_client = None
+groq_client = None
+
+if GROQ_API_KEY and len(GROQ_API_KEY) > 10:
+    try:
+        groq_client = Groq(api_key=GROQ_API_KEY)
+        print("Groq client initialized")
+    except Exception as e:
+        print(f"Groq init error: {e}")
+
+if OPENAI_API_KEY and len(OPENAI_API_KEY) > 10:
+    try:
+        from openai import OpenAI
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+    except Exception as e:
+        print(f"OpenAI init error: {e}")
 
 FEATURE_COLUMNS = ['HighBP', 'HighChol', 'BMI', 'Smoker', 'Stroke', 'HeartDiseaseorAttack', 
                    'PhysActivity', 'Fruits', 'Veggies', 'HvyAlcoholConsump', 'GenHlth', 
@@ -48,15 +65,13 @@ class ChatInput(BaseModel):
     message: str
     context: dict = {}
 
-def get_openai_client():
-    global openai_client
-    if openai_client is None and OPENAI_API_KEY and len(OPENAI_API_KEY) > 10:
-        try:
-            from openai import OpenAI
-            openai_client = OpenAI(api_key=OPENAI_API_KEY)
-        except Exception as e:
-            print(f"OpenAI init error: {e}")
-    return openai_client
+def get_ai_client():
+    return groq_client if groq_client else openai_client
+
+def get_ai_provider():
+    if groq_client: return "Groq"
+    if openai_client: return "OpenAI"
+    return "None"
 
 def calculate_clinical_risk(data: dict) -> float:
     weights = {'HighBP': 0.15, 'HighChol': 0.08, 'BMI': 0.18, 'Smoker': 0.06,
@@ -87,7 +102,7 @@ def calculate_lifestyle_risk(data: dict) -> float:
     return max(0, min(100, risk))
 
 def generate_ai_insight(clinical_data: dict = None, lifestyle_data: dict = None) -> str:
-    client = get_openai_client()
+    client = get_ai_client()
     if not client:
         return random.choice([
             "Your metabolic health is showing positive trends with consistent activity levels.",
@@ -110,18 +125,25 @@ Provide a brief, encouraging insight (2-3 sentences max). Focus on:
 
 Keep it positive and supportive, not medical advice."""
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=150
-        )
+        if groq_client:
+            response = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150
+            )
+        else:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150
+            )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"OpenAI error: {e}")
+        print(f"AI error: {e}")
         return "Focus on maintaining consistent sleep patterns and daily physical activity for optimal metabolic health."
 
 def generate_ai_chat_response(user_message: str, context: dict) -> str:
-    client = get_openai_client()
+    client = get_ai_client()
     if not client:
         return "I'm your AI health assistant. Ask me about diabetes prevention, lifestyle improvements, or how to interpret your health metrics. Note: I'm not a substitute for professional medical advice."
     
@@ -141,28 +163,30 @@ Guidelines:
 - Always remind them to consult healthcare providers
 - Keep responses concise (3-4 sentences max)"""
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=200
-        )
+        if groq_client:
+            response = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200
+            )
+        else:
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200
+            )
         return response.choices[0].message.content
     except Exception as e:
-        print(f"OpenAI chat error: {e}")
+        print(f"AI chat error: {e}")
         return "I'm here to help with your health questions! Please note that for specific medical concerns, you should consult a healthcare professional."
 
 @app.get("/")
 def root():
-    return {"message": "DiaSense AI API", "status": "running", "openai_enabled": bool(get_openai_client())}
+    return {"message": "DiaSense AI API", "status": "running", "ai_provider": get_ai_provider()}
 
 @app.get("/api/health")
 def health():
-    key_present = bool(OPENAI_API_KEY and len(OPENAI_API_KEY) > 10)
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(get_openai_client()), "key_loaded": key_present}
-
-@app.get("/api/debug/env")
-def debug_env():
-    return {"key_length": len(OPENAI_API_KEY) if OPENAI_API_KEY else 0, "key_prefix": OPENAI_API_KEY[:10] if OPENAI_API_KEY else "NONE"}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "ai_provider": get_ai_provider()}
 
 @app.post("/api/clinical/predict")
 def predict_clinical(data: ClinicalInput):
@@ -177,7 +201,7 @@ def predict_clinical(data: ClinicalInput):
             "risk_level": risk_level,
             "feature_contributions": [{"feature": f, "value": input_dict.get(f, 0), "contribution": random.uniform(0.1, 0.5)} for f in FEATURE_COLUMNS[:10]],
             "top_insights": [{"feature": "AI Analysis", "contribution_pct": random.randint(20, 40), "description": generate_ai_insight(clinical_data=input_dict)}],
-            "model_info": {"accuracy": 0.87, "mode": "ai_enhanced" if get_openai_client() else "calculation"}
+            "model_info": {"accuracy": 0.87, "ai_provider": get_ai_provider()}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

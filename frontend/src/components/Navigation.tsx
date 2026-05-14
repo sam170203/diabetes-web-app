@@ -9,7 +9,8 @@ import {
   Watch, 
   Brain, 
   FileText,
-  Sparkles
+  Sparkles,
+  FlaskConical
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -19,6 +20,7 @@ const navItems = [
   { href: "/clinical", label: "Clinical", icon: Heart },
   { href: "/lifestyle", label: "Lifestyle", icon: Brain },
   { href: "/realtime", label: "Real-Time", icon: Watch },
+  { href: "/prototype", label: "Prototype", icon: FlaskConical },
   { href: "/insights", label: "Insights", icon: FileText },
 ];
 
