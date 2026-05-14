@@ -8,7 +8,6 @@ import asyncio
 import os
 from datetime import datetime
 from fastapi import WebSocket
-from openai import OpenAI
 
 app = FastAPI(title="DiaSense AI API", version="1.0.0")
 
@@ -16,7 +15,7 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+openai_client = None
 
 FEATURE_COLUMNS = ['HighBP', 'HighChol', 'BMI', 'Smoker', 'Stroke', 'HeartDiseaseorAttack', 
                    'PhysActivity', 'Fruits', 'Veggies', 'HvyAlcoholConsump', 'GenHlth', 
@@ -49,6 +48,16 @@ class ChatInput(BaseModel):
     message: str
     context: dict = {}
 
+def get_openai_client():
+    global openai_client
+    if openai_client is None and OPENAI_API_KEY and len(OPENAI_API_KEY) > 10:
+        try:
+            from openai import OpenAI
+            openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        except Exception as e:
+            print(f"OpenAI init error: {e}")
+    return openai_client
+
 def calculate_clinical_risk(data: dict) -> float:
     weights = {'HighBP': 0.15, 'HighChol': 0.08, 'BMI': 0.18, 'Smoker': 0.06,
                'Stroke': 0.12, 'HeartDiseaseorAttack': 0.10, 'PhysActivity': -0.08,
@@ -78,11 +87,12 @@ def calculate_lifestyle_risk(data: dict) -> float:
     return max(0, min(100, risk))
 
 def generate_ai_insight(clinical_data: dict = None, lifestyle_data: dict = None) -> str:
-    if not openai_client:
+    client = get_openai_client()
+    if not client:
         return random.choice([
             "Your metabolic health is showing positive trends with consistent activity levels.",
             "Based on your recent data, focus on improving sleep consistency for better outcomes.",
-            "Your daily step count has improved - keep it up! Small changes lead to big results.",
+            "Your daily step count has improved - keep it up!",
             "Stress management could significantly impact your diabetes risk score.",
             "Stay hydrated! Water intake plays a crucial role in metabolic function."
         ])
@@ -98,9 +108,9 @@ Provide a brief, encouraging insight (2-3 sentences max). Focus on:
 - One area for improvement
 - Actionable tip
 
-Keep it positive and supportive, not medical advice (remind them to consult healthcare providers)."""
+Keep it positive and supportive, not medical advice."""
 
-        response = openai_client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=150
@@ -111,7 +121,8 @@ Keep it positive and supportive, not medical advice (remind them to consult heal
         return "Focus on maintaining consistent sleep patterns and daily physical activity for optimal metabolic health."
 
 def generate_ai_chat_response(user_message: str, context: dict) -> str:
-    if not openai_client:
+    client = get_openai_client()
+    if not client:
         return "I'm your AI health assistant. Ask me about diabetes prevention, lifestyle improvements, or how to interpret your health metrics. Note: I'm not a substitute for professional medical advice."
     
     try:
@@ -120,7 +131,6 @@ def generate_ai_chat_response(user_message: str, context: dict) -> str:
 User's Health Context:
 - Risk Level: {context.get('risk_level', 'Unknown')}
 - Metabolic Score: {context.get('metabolic_score', 'Unknown')}
-- Recent Data: {json.dumps(context.get('recent_data', {}))}
 
 User Question: {user_message}
 
@@ -128,11 +138,10 @@ Guidelines:
 - Be friendly, supportive, and encouraging
 - Focus on prevention and lifestyle
 - Never give specific medical diagnoses
-- Always remind them to consult healthcare providers for medical advice
-- Keep responses concise (3-4 sentences max)
-- If they ask about symptoms, direct them to a healthcare professional"""
+- Always remind them to consult healthcare providers
+- Keep responses concise (3-4 sentences max)"""
 
-        response = openai_client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=200
@@ -144,11 +153,11 @@ Guidelines:
 
 @app.get("/")
 def root():
-    return {"message": "DiaSense AI API", "status": "running", "openai_enabled": bool(openai_client)}
+    return {"message": "DiaSense AI API", "status": "running", "openai_enabled": bool(get_openai_client())}
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(openai_client)}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(get_openai_client())}
 
 @app.post("/api/clinical/predict")
 def predict_clinical(data: ClinicalInput):
@@ -163,7 +172,7 @@ def predict_clinical(data: ClinicalInput):
             "risk_level": risk_level,
             "feature_contributions": [{"feature": f, "value": input_dict.get(f, 0), "contribution": random.uniform(0.1, 0.5)} for f in FEATURE_COLUMNS[:10]],
             "top_insights": [{"feature": "AI Analysis", "contribution_pct": random.randint(20, 40), "description": generate_ai_insight(clinical_data=input_dict)}],
-            "model_info": {"accuracy": 0.87, "mode": "ai_enhanced" if openai_client else "calculation"}
+            "model_info": {"accuracy": 0.87, "mode": "ai_enhanced" if get_openai_client() else "calculation"}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
