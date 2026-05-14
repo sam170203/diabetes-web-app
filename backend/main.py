@@ -8,213 +8,163 @@ import asyncio
 import os
 from datetime import datetime
 from fastapi import WebSocket
+from openai import OpenAI
 
 app = FastAPI(title="DiaSense AI API", version="1.0.0")
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 FEATURE_COLUMNS = ['HighBP', 'HighChol', 'BMI', 'Smoker', 'Stroke', 'HeartDiseaseorAttack', 
                    'PhysActivity', 'Fruits', 'Veggies', 'HvyAlcoholConsump', 'GenHlth', 
                    'MentHlth', 'PhysHlth', 'DiffWalk', 'Sex', 'Age', 'Education', 'Income']
 
 CLINICAL_IMPORTANCE = [
-    {"feature": "GenHlth", "importance": 0.191},
-    {"feature": "BMI", "importance": 0.178},
-    {"feature": "HighBP", "importance": 0.166},
-    {"feature": "Age", "importance": 0.085},
-    {"feature": "HighChol", "importance": 0.074},
-    {"feature": "DiffWalk", "importance": 0.058},
-    {"feature": "PhysHlth", "importance": 0.044},
-    {"feature": "Income", "importance": "0.042"},
-    {"feature": "HeartDiseaseorAttack", "importance": 0.038},
-    {"feature": "MentHlth", "importance": 0.027}
+    {"feature": "GenHlth", "importance": 0.191}, {"feature": "BMI", "importance": 0.178},
+    {"feature": "HighBP", "importance": 0.166}, {"feature": "Age", "importance": 0.085},
+    {"feature": "HighChol", "importance": 0.074}, {"feature": "DiffWalk", "importance": 0.058}
 ]
 
 LIFESTYLE_IMPORTANCE = [
-    {"feature": "sleep_duration", "importance": 0.469},
-    {"feature": "daily_activity", "importance": 0.074},
-    {"feature": "stress_level", "importance": 0.055},
-    {"feature": "sleep_consistency", "importance": 0.054},
-    {"feature": "smoking_habits", "importance": 0.053},
-    {"feature": "steps_walked", "importance": 0.052},
-    {"feature": "meal_timing_score", "importance": 0.044},
-    {"feature": "weight_change", "importance": 0.041}
+    {"feature": "sleep_duration", "importance": 0.469}, {"feature": "daily_activity", "importance": 0.074},
+    {"feature": "stress_level", "importance": 0.055}, {"feature": "sleep_consistency", "importance": 0.054}
 ]
 
 class ClinicalInput(BaseModel):
-    HighBP: float
-    HighChol: float
-    BMI: float
-    Smoker: float
-    Stroke: float
-    HeartDiseaseorAttack: float
-    PhysActivity: float
-    Fruits: float
-    Veggies: float
-    HvyAlcoholConsump: float
-    GenHlth: float
-    MentHlth: float
-    PhysHlth: float
-    DiffWalk: float
-    Sex: float
-    Age: float
-    Education: float
-    Income: float
+    HighBP: float; HighChol: float; BMI: float; Smoker: float; Stroke: float
+    HeartDiseaseorAttack: float; PhysActivity: float; Fruits: float; Veggies: float
+    HvyAlcoholConsump: float; GenHlth: float; MentHlth: float; PhysHlth: float
+    DiffWalk: float; Sex: float; Age: float; Education: float; Income: float
 
 class LifestyleInput(BaseModel):
-    sleep_duration: float
-    sleep_consistency: float
-    daily_activity: float
-    steps_walked: float
-    water_intake: float
-    meal_timing_score: float
-    smoking_habits: float
-    alcohol_consumption: float
-    stress_level: float
-    screen_time: float
-    weight_change: float
-    diet_quality: float
+    sleep_duration: float; sleep_consistency: float; daily_activity: float
+    steps_walked: float; water_intake: float; meal_timing_score: float
+    smoking_habits: float; alcohol_consumption: float; stress_level: float
+    screen_time: float; weight_change: float; diet_quality: float
+
+class ChatInput(BaseModel):
+    message: str
+    context: dict = {}
 
 def calculate_clinical_risk(data: dict) -> float:
-    weights = {
-        'HighBP': 0.15, 'HighChol': 0.08, 'BMI': 0.18, 'Smoker': 0.06,
-        'Stroke': 0.12, 'HeartDiseaseorAttack': 0.10, 'PhysActivity': -0.08,
-        'Fruits': -0.04, 'Veggies': -0.04, 'HvyAlcoholConsump': 0.05,
-        'GenHlth': 0.12, 'MentHlth': 0.02, 'PhysHlth': 0.04, 'DiffWalk': 0.08,
-        'Age': 0.06, 'Education': -0.02, 'Income': -0.02
-    }
+    weights = {'HighBP': 0.15, 'HighChol': 0.08, 'BMI': 0.18, 'Smoker': 0.06,
+               'Stroke': 0.12, 'HeartDiseaseorAttack': 0.10, 'PhysActivity': -0.08,
+               'Fruits': -0.04, 'Veggies': -0.04, 'HvyAlcoholConsump': 0.05,
+               'GenHlth': 0.12, 'MentHlth': 0.02, 'PhysHlth': 0.04, 'DiffWalk': 0.08,
+               'Age': 0.06, 'Education': -0.02, 'Income': -0.02}
     
     risk = 15
     for feature, weight in weights.items():
         val = data.get(feature, 0)
-        if feature in ['PhysActivity', 'Fruits', 'Veggies', 'Education', 'Income']:
-            risk -= val * weight * 10
-        else:
-            risk += val * weight * 10
+        risk -= val * weight * 10 if feature in ['PhysActivity', 'Fruits', 'Veggies'] else val * weight * 10
     
     bmi = data.get('BMI', 25)
-    if bmi > 30:
-        risk += 15
-    elif bmi > 25:
-        risk += 8
-    
-    age = data.get('Age', 7)
-    if age > 10:
-        risk += 10
-    elif age > 8:
-        risk += 5
+    if bmi > 30: risk += 15
+    elif bmi > 25: risk += 8
     
     return max(0, min(100, risk))
 
 def calculate_lifestyle_risk(data: dict) -> float:
     risk = 0
-    
-    sleep = data.get('sleep_duration', 7)
-    if sleep < 6:
-        risk += 20
-    elif sleep < 7:
-        risk += 10
-    
-    activity = data.get('daily_activity', 60)
-    if activity < 30:
-        risk += 18
-    
-    steps = data.get('steps_walked', 8000)
-    if steps < 5000:
-        risk += 12
-    
-    stress = data.get('stress_level', 5)
-    if stress > 7:
-        risk += 10
-    
-    if data.get('smoking_habits', 0) == 1:
-        risk += 15
-    
-    alcohol = data.get('alcohol_consumption', 0)
-    if alcohol > 4:
-        risk += 8
-    
-    screen = data.get('screen_time', 4)
-    if screen > 8:
-        risk += 6
-    
-    water = data.get('water_intake', 8)
-    if water < 4:
-        risk += 5
-    
+    if data.get('sleep_duration', 7) < 6: risk += 20
+    if data.get('daily_activity', 60) < 30: risk += 18
+    if data.get('steps_walked', 8000) < 5000: risk += 12
+    if data.get('stress_level', 5) > 7: risk += 10
+    if data.get('smoking_habits', 0) == 1: risk += 15
+    if data.get('alcohol_consumption', 0) > 4: risk += 8
     return max(0, min(100, risk))
+
+def generate_ai_insight(clinical_data: dict = None, lifestyle_data: dict = None) -> str:
+    if not openai_client:
+        return random.choice([
+            "Your metabolic health is showing positive trends with consistent activity levels.",
+            "Based on your recent data, focus on improving sleep consistency for better outcomes.",
+            "Your daily step count has improved - keep it up! Small changes lead to big results.",
+            "Stress management could significantly impact your diabetes risk score.",
+            "Stay hydrated! Water intake plays a crucial role in metabolic function."
+        ])
+    
+    try:
+        prompt = f"""You are a diabetes risk prediction assistant. Analyze the user's health data and provide one helpful insight.
+
+Clinical Data: {clinical_data or 'Not provided'}
+Lifestyle Data: {lifestyle_data or 'Not provided'}
+
+Provide a brief, encouraging insight (2-3 sentences max). Focus on:
+- What they're doing well
+- One area for improvement
+- Actionable tip
+
+Keep it positive and supportive, not medical advice (remind them to consult healthcare providers)."""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"OpenAI error: {e}")
+        return "Focus on maintaining consistent sleep patterns and daily physical activity for optimal metabolic health."
+
+def generate_ai_chat_response(user_message: str, context: dict) -> str:
+    if not openai_client:
+        return "I'm your AI health assistant. Ask me about diabetes prevention, lifestyle improvements, or how to interpret your health metrics. Note: I'm not a substitute for professional medical advice."
+    
+    try:
+        prompt = f"""You are DiaSense AI, a friendly diabetes risk prediction assistant. 
+
+User's Health Context:
+- Risk Level: {context.get('risk_level', 'Unknown')}
+- Metabolic Score: {context.get('metabolic_score', 'Unknown')}
+- Recent Data: {json.dumps(context.get('recent_data', {}))}
+
+User Question: {user_message}
+
+Guidelines:
+- Be friendly, supportive, and encouraging
+- Focus on prevention and lifestyle
+- Never give specific medical diagnoses
+- Always remind them to consult healthcare providers for medical advice
+- Keep responses concise (3-4 sentences max)
+- If they ask about symptoms, direct them to a healthcare professional"""
+
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"OpenAI chat error: {e}")
+        return "I'm here to help with your health questions! Please note that for specific medical concerns, you should consult a healthcare professional."
 
 @app.get("/")
 def root():
-    return {"message": "DiaSense AI API", "status": "running"}
+    return {"message": "DiaSense AI API", "status": "running", "openai_enabled": bool(openai_client)}
 
 @app.get("/api/health")
 def health():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "mode": "optimized"}
+    return {"status": "healthy", "timestamp": datetime.now().isoformat(), "openai": bool(openai_client)}
 
 @app.post("/api/clinical/predict")
 def predict_clinical(data: ClinicalInput):
     try:
         input_dict = data.dict()
-        
-        risk_percentage = calculate_clinical_risk(input_dict)
-        
-        if risk_percentage < 30:
-            risk_level = "Low"
-        elif risk_percentage < 60:
-            risk_level = "Medium"
-        else:
-            risk_level = "High"
-        
-        feature_contributions = []
-        for col in FEATURE_COLUMNS:
-            val = input_dict.get(col, 0)
-            contrib = abs(val * random.uniform(0.1, 0.5))
-            feature_contributions.append({
-                "feature": col,
-                "value": float(val),
-                "contribution": contrib,
-                "impact": "increases" if val > 0.5 else "decreases"
-            })
-        
-        feature_contributions.sort(key=lambda x: abs(x["contribution"]), reverse=True)
-        
-        top_insights = []
-        high_risk_factors = []
-        if input_dict.get('BMI', 0) > 30:
-            high_risk_factors.append("High BMI")
-        if input_dict.get('HighBP', 0) == 1:
-            high_risk_factors.append("High Blood Pressure")
-        if input_dict.get('GenHlth', 3) > 3:
-            high_risk_factors.append("Poor General Health")
-        
-        for factor in high_risk_factors[:3]:
-            top_insights.append({
-                "feature": factor,
-                "contribution_pct": random.randint(20, 40),
-                "description": f"{factor} significantly increases diabetes risk"
-            })
+        risk = calculate_clinical_risk(input_dict)
+        risk_level = "Low" if risk < 30 else "Medium" if risk < 60 else "High"
         
         return {
-            "prediction": 1 if risk_percentage > 50 else 0,
-            "risk_percentage": round(risk_percentage, 1),
+            "prediction": 1 if risk > 50 else 0,
+            "risk_percentage": round(risk, 1),
             "risk_level": risk_level,
-            "feature_contributions": feature_contributions[:10],
-            "top_insights": top_insights,
-            "model_info": {
-                "accuracy": 0.87,
-                "dataset": "BRFSS 2015",
-                "samples": 253681,
-                "mode": "optimized_calculation"
-            }
+            "feature_contributions": [{"feature": f, "value": input_dict.get(f, 0), "contribution": random.uniform(0.1, 0.5)} for f in FEATURE_COLUMNS[:10]],
+            "top_insights": [{"feature": "AI Analysis", "contribution_pct": random.randint(20, 40), "description": generate_ai_insight(clinical_data=input_dict)}],
+            "model_info": {"accuracy": 0.87, "mode": "ai_enhanced" if openai_client else "calculation"}
         }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -226,60 +176,23 @@ def get_clinical_importance():
 def predict_lifestyle(data: LifestyleInput):
     try:
         input_dict = data.dict()
-        
-        risk_score = calculate_lifestyle_risk(input_dict)
-        
-        if risk_score < 30:
-            risk_level = "Low"
-            recommendation = "Your lifestyle patterns are healthy. Keep up the good work!"
-        elif risk_score < 60:
-            risk_level = "Medium"
-            recommendation = "Some lifestyle factors could be improved. Focus on sleep consistency and daily activity."
-        else:
-            risk_level = "High"
-            recommendation = "Multiple lifestyle factors are increasing your metabolic risk. Consider consulting a healthcare provider."
+        risk = calculate_lifestyle_risk(input_dict)
+        risk_level = "Low" if risk < 30 else "Medium" if risk < 60 else "High"
         
         insights = []
-        
-        if data.sleep_duration < 6:
-            insights.append("Poor sleep duration may increase insulin resistance risk")
-        if data.sleep_consistency < 0.5:
-            insights.append("Irregular sleep patterns can affect metabolic health")
-        if data.daily_activity < 30:
-            insights.append("Low physical activity is a significant risk factor")
-        if data.steps_walked < 5000:
-            insights.append(f"Your daily steps ({int(data.steps_walked)}) are below the recommended 10,000")
-        if data.stress_level > 7:
-            insights.append("High stress levels can impact blood sugar regulation")
-        if data.screen_time > 8:
-            insights.append("Excessive screen time correlates with sedentary behavior")
-        if data.smoking_habits == 1:
-            insights.append("Smoking is a major risk factor for metabolic disorders")
-        if data.alcohol_consumption > 4:
-            insights.append("High alcohol consumption affects metabolic health")
-        
-        positive_feedback = []
-        if data.sleep_duration >= 7:
-            positive_feedback.append("Good sleep duration supports metabolic health")
-        if data.daily_activity >= 60:
-            positive_feedback.append("High physical activity level is beneficial")
-        if data.steps_walked >= 8000:
-            positive_feedback.append("Your step count is excellent")
-        if data.water_intake >= 8:
-            positive_feedback.append("Great hydration supporting metabolic function")
-        
-        metabolic_score = 100 - risk_score
+        if data.sleep_duration < 6: insights.append("Poor sleep duration may increase insulin resistance risk")
+        if data.daily_activity < 30: insights.append("Low physical activity is a significant risk factor")
+        if data.steps_walked < 5000: insights.append(f"Your daily steps ({int(data.steps_walked)}) are below recommended")
         
         return {
-            "risk_score": round(risk_score, 1),
-            "metabolic_score": round(metabolic_score, 1),
+            "risk_score": round(risk, 1),
+            "metabolic_score": round(100 - risk, 1),
             "risk_level": risk_level,
-            "recommendation": recommendation,
-            "insights": insights[:6],
-            "positive_feedback": positive_feedback[:4],
-            "feature_importance": LIFESTYLE_IMPORTANCE[:8]
+            "recommendation": "Great progress! Keep focusing on sleep and activity." if risk < 30 else "Consider improving sleep and activity levels.",
+            "insights": insights + [generate_ai_insight(lifestyle_data=input_dict)],
+            "positive_feedback": ["Your lifestyle shows positive patterns!"],
+            "feature_importance": LIFESTYLE_IMPORTANCE[:6]
         }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -287,10 +200,17 @@ def predict_lifestyle(data: LifestyleInput):
 def get_lifestyle_importance():
     return LIFESTYLE_IMPORTANCE
 
+@app.post("/api/chat")
+def chat(input_data: ChatInput):
+    return {"response": generate_ai_chat_response(input_data.message, input_data.context)}
+
+@app.post("/api/ai-insight")
+def ai_insight(data: dict):
+    return {"insight": generate_ai_insight(data.get("clinical"), data.get("lifestyle"))}
+
 @app.websocket("/ws/stream")
 async def websocket_stream(websocket: WebSocket):
     await websocket.accept()
-    
     try:
         while True:
             data = {
@@ -306,32 +226,14 @@ async def websocket_stream(websocket: WebSocket):
                 "oxygen_saturation": random.randint(95, 100),
                 "body_temperature": round(random.uniform(36.1, 37.2), 1)
             }
-            
             await websocket.send_json(data)
             await asyncio.sleep(2)
-            
     except Exception as e:
         print(f"WebSocket error: {e}")
 
 @app.get("/api/insights/generate")
 def generate_insights():
-    insights_pool = [
-        "Your sedentary behavior has increased by 18% this week.",
-        "Poor sleep consistency may increase insulin resistance risk.",
-        "Your recent activity trend improved metabolic health score by 12%.",
-        "Irregular meal timing affects blood sugar regulation.",
-        "Stress levels correlate with elevated glucose levels.",
-        "Regular physical activity reduces diabetes risk by up to 40%.",
-        "Hydration plays a crucial role in metabolic function.",
-        "Screen time over 8 hours daily increases metabolic risk.",
-        "Consistent sleep schedule supports hormonal balance.",
-        "High BMI is a significant predictor of diabetes risk."
-    ]
-    
-    return {
-        "insights": random.sample(insights_pool, 5),
-        "timestamp": datetime.now().isoformat()
-    }
+    return {"insights": [generate_ai_insight() for _ in range(5)], "timestamp": datetime.now().isoformat()}
 
 @app.get("/api/dashboard/summary")
 def dashboard_summary():
@@ -340,11 +242,8 @@ def dashboard_summary():
         "lifestyle_risk": round(random.uniform(25, 55), 1),
         "metabolic_score": round(random.uniform(60, 85), 1),
         "last_updated": datetime.now().isoformat(),
-        "alerts": [
-            "Monitor blood pressure regularly",
-            "Increase daily step count",
-            "Improve sleep consistency"
-        ]
+        "ai_insight": generate_ai_insight(),
+        "alerts": ["Focus on consistent sleep for better metabolic health"]
     }
 
 if __name__ == "__main__":

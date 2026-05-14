@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
+import AIChatbot from "@/components/AIChatbot";
 
 export const metadata: Metadata = {
   title: "DiaSense AI - Early Diabetes Risk Prediction",
@@ -19,6 +20,7 @@ export default function RootLayout({
         <main className="pt-16">
           {children}
         </main>
+        <AIChatbot />
       </body>
     </html>
   );
