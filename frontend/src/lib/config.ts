@@ -19,6 +19,9 @@ export const API_CONFIG = {
     dashboard: {
       summary: `${API_BASE_URL}/api/dashboard/summary`,
     },
+    chat: {
+      send: `${API_BASE_URL}/api/chat`,
+    },
     websocket: {
       stream: `${WS_BASE_URL}/ws/stream`,
     },
