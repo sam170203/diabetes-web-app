@@ -132,8 +132,9 @@ export default function RealtimeMonitoring() {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           {metricCards.map((metric, index) => {
-            const value = currentData?.[metric.key as keyof LiveData] ?? 0;
-            const isNormal = value >= metric.range[0] && value <= metric.range[1];
+            const rawValue = currentData?.[metric.key as keyof LiveData];
+            const value = typeof rawValue === 'number' ? rawValue : 0;
+            const isNormal = typeof rawValue === 'number' && value >= metric.range[0] && value <= metric.range[1];
             
             return (
               <motion.div
